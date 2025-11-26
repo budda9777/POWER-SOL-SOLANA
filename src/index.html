@@ -1,0 +1,708 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Power Sol Sniping Bot</title>
+    <!-- Token Radar Fonts (Manrope + JetBrains Mono) -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest" defer></script>
+    <!-- ApexCharts (local fallback first) -->
+    <script src="vendor/apexcharts.min.js" data-local="true"></script>
+    <script>
+        // If local stub detected (no real features) attempt CDN load silently
+        (function(){
+            if (window.ApexCharts && window.ApexCharts.toString().includes('Stub')) {
+                const s=document.createElement('script');
+                s.src='https://cdn.jsdelivr.net/npm/apexcharts';
+                s.onload=()=>console.log('[ApexCharts] CDN loaded over local stub');
+                s.onerror=()=>console.warn('[ApexCharts] CDN load failed, using local stub');
+                document.head.appendChild(s);
+            }
+        })();
+    </script>
+    <!-- Fonts: Space Grotesk (UI/Text) & Victor Mono (Numbers) -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Victor+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free/css/all.min.css">
+</head>
+<body>
+    <script>
+    // Fallback diagnostic: if main renderer script fails to define window._diag,
+    // we create a lightweight helper after a short delay so the user can inspect why.
+    window.addEventListener('load', () => {
+        setTimeout(() => {
+            if (typeof window._diag !== 'function') {
+                console.warn('[diag-fallback] window._diag non definito: possibile errore in renderer.js');
+                window._diag = function(){
+                    const api = window.powersol || {};
+                    const info = {
+                        fallback: true,
+                        timestamp: new Date().toISOString(),
+                        rendererDiagMissing: true,
+                        ipcKeys: Object.keys(api),
+                        hasAddLog: typeof window.addLog === 'function',
+                        scripts: Array.from(document.scripts).map(s=>s.src||'[inline]'),
+                        apex: !!window.ApexCharts
+                    };
+                    console.log('[diag-fallback]', info);
+                    return info;
+                };
+            }
+        }, 800); // wait a bit for renderer.js to run
+    });
+    </script>
+        <!-- Header con controlli bot -->
+        <header class="main-header">
+        <div class="header-left">
+            <h1 class="solana-gradient"><i class="fas fa-crosshairs"></i> Power Sol Sniping Bot</h1>
+        </div>
+                <div class="header-center">
+                        <div class="status-indicator" id="botStatus">
+                                <i class="fas fa-circle status-off"></i>
+                                <span id="statusLabel">STOPPED</span>
+                        </div>
+                        <div class="wallet-chip badge" id="walletBalance" title="Wallet Balance">-- SOL</div>
+                        <div class="badge" id="pnl24h" title="P&L 24h">$0.00 (0%)</div>
+            <label class="switch legacy-switch" title="Start/Stop Bot" style="display:none;">
+                <input type="checkbox" id="botSwitch">
+                <span class="slider round"></span>
+            </label>
+            <button id="botRunButton" class="action-btn run" data-state="stopped"><i class="fas fa-play"></i><span class="label">START BOT</span></button>
+                </div>
+        <div class="header-right">
+            <span id="autoTradingChip" class="tab-chip badge" title="Automatic trading status" style="margin-right:8px; font-size:.7rem; padding:.25rem .6rem;">Auto-Trade: OFF</span>
+            <button id="panicSellAll" class="btn-sell-strong" title="Panic Sell All"><i class="fas fa-fire"></i> PANIC SELL ALL</button>
+        </div>
+        </header>
+
+        <!-- (Removed secondary header with P&L chart; P&L moved into dashboard) -->
+
+    <!-- Tab Navigation -->
+    <nav class="tab-bar">
+        <select id="tabSelect" class="tab-select" title="Tab navigation">
+            <option value="tab-dashboard" selected>Dashboard</option>
+            <option value="tab-discovery">Discovery</option>
+            <option value="tab-radar2">Discovery 2.0</option>
+            <option value="tab-positions">Positions</option>
+            <option value="tab-history">History</option>
+            <option value="tab-logs">Console</option>
+            <option value="tab-settings">Settings</option>
+        </select>
+        <button class="tab-btn active" data-tab="tab-dashboard"><i class="fas fa-th-large"></i><span>Dashboard</span></button>
+    <button class="tab-btn" data-tab="tab-discovery"><i class="fas fa-search"></i><span>Discovery</span></button>
+    <button class="tab-btn" data-tab="tab-radar2"><i class="fas fa-bullseye"></i><span>Discovery 2.0</span></button>
+    <button class="tab-btn" data-tab="tab-positions"><i class="fas fa-layer-group"></i><span>Positions</span></button>
+    <button class="tab-btn" data-tab="tab-history"><i class="fas fa-history"></i><span>History</span></button>
+    <button class="tab-btn" data-tab="tab-logs"><i class="fas fa-terminal"></i><span>Console</span></button>
+    <button class="tab-btn" data-tab="tab-settings"><i class="fas fa-sliders-h"></i><span>Settings</span></button>
+    </nav>
+
+    <!-- Tab Panels -->
+    <main class="tab-panels">
+        <!-- Disclaimer Modal -->
+        <div id="disclaimerModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="disclaimerTitle">
+            <div class="modal-backdrop" data-close-disclaimer></div>
+            <div class="modal-content glass">
+                <div class="modal-header">
+                    <h3 id="disclaimerTitle"><i class="fas fa-exclamation-triangle"></i> Warnings & Disclaimer</h3>
+                </div>
+                <div class="modal-body">
+                    <p><strong>Use at your own risk.</strong> This bot can execute real transactions on the Solana blockchain if you enable the corresponding options.</p>
+                    <ul class="disclaimer-points">
+                        <li>Cryptocurrencies are highly volatile: you may lose your entire capital.</li>
+                        <li>No guarantee of profit or uninterrupted operation.</li>
+                        <li>Always review settings before starting the bot.</li>
+                        <li>Ensure your private key and funds are protected.</li>
+                        <li>Experimental features may have bugs or change in the future.</li>
+                        <li>The <em>PANIC SELL ALL</em> button liquidates positions quickly but doesn't guarantee expected price.</li>
+                    </ul>
+                    <p class="small-note">By proceeding you confirm you understand the risks and accept to use the software with no liability from the authors.</p>
+                    <label class="dont-show"><input type="checkbox" id="dismissDisclaimer"> Don't show again</label>
+                </div>
+                <div class="modal-footer">
+                    <button id="disclaimerCancel" class="btn btn-secondary" data-close-disclaimer>Cancel</button>
+                    <button id="disclaimerAccept" class="btn btn-primary"><i class="fas fa-check"></i> Accept & Start</button>
+                </div>
+            </div>
+        </div>
+        <!-- DASHBOARD TAB -->
+        <div id="tab-dashboard" class="tab-panel active">
+            <div class="dashboard-grid">
+                <!-- P&L Performance Chart (moved here) -->
+                <section class="quadrant pnl-panel">
+                    <div class="panel-header">
+                        <h2><i class="fas fa-chart-area"></i> P&L Performance</h2>
+                        <div class="panel-controls">
+                            <div class="timeframe-selector" id="pnlTimeframes">
+                                <button class="active" data-tf="24H">24H</button>
+                                <button data-tf="7D">7D</button>
+                                <button data-tf="30D">30D</button>
+                                <button data-tf="ALL">ALL</button>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="pnl-chart-wrapper" style="padding:12px 16px; height:100%; display:flex; flex-direction:column;">
+                        <div id="pnl-chart" style="flex:1; min-height:180px;"></div>
+                    </div>
+                </section>
+                <!-- Statistiche Globali -->
+                <section class="quadrant stats-panel">
+                    <div class="panel-header">
+                        <h2><i class="fas fa-chart-line"></i> Global Stats</h2>
+                    </div>
+                    <div class="stats-grid">
+                        <div class="stat-item">
+                            <div class="stat-icon pnl-icon">
+                                <i class="fas fa-dollar-sign"></i>
+                            </div>
+                            <div class="stat-content">
+                                <div class="stat-label">Total P&L</div>
+                                <div class="stat-value" id="totalPnl">$0.00</div>
+                                <div class="mini-pnl-wrapper">
+                                    <div id="pnlMiniChart" class="mini-pnl-chart" aria-label="Mini PnL trend"></div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="stat-item">
+                            <div class="stat-icon buy-icon">
+                                <i class="fas fa-shopping-cart"></i>
+                            </div>
+                            <div class="stat-content">
+                                <div class="stat-label">Trades Executed</div>
+                                <div class="stat-value" id="tradesExecuted">0</div>
+                            </div>
+                        </div>
+                        <div class="stat-item">
+                            <div class="stat-icon sell-icon">
+                                <i class="fas fa-hand-holding-usd"></i>
+                            </div>
+                            <div class="stat-content">
+                                <div class="stat-label">Sells Executed</div>
+                                <div class="stat-value" id="salesExecuted">0</div>
+                            </div>
+                        </div>
+                        <div class="stat-item">
+                            <div class="stat-icon positions-icon">
+                                <i class="fas fa-briefcase"></i>
+                            </div>
+                            <div class="stat-content">
+                                <div class="stat-label">Active Positions</div>
+                                <div class="stat-value" id="activePositions">0</div>
+                            </div>
+                        </div>
+                        <div class="stat-item">
+                            <div class="stat-icon runtime-icon">
+                                <i class="fas fa-clock"></i>
+                            </div>
+                            <div class="stat-content">
+                                <div class="stat-label">Runtime</div>
+                                <div class="stat-value" id="runtime">00:00:00</div>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- Token Scoperti (mini) -->
+                <section class="quadrant tokens-panel compact-ref">
+                    <div class="panel-header">
+                        <h2><i class="fas fa-search"></i> Latest Tokens</h2>
+                        <div class="panel-controls">
+                            <span class="token-count">Total: <span id="foundTokenCount">0</span></span>
+                        </div>
+                    </div>
+                    <div class="table-container small">
+                        <table class="sortable-table" id="tokensTable">
+                            <thead>
+                                <tr>
+                                    <th data-sort="symbol">Symbol <i class="fas fa-sort"></i></th>
+                                    <th data-sort="price">Price <i class="fas fa-sort"></i></th>
+                                    <th data-sort="liquidity">Liq <i class="fas fa-sort"></i></th>
+                                    <th data-sort="marketCap">Mkt Cap <i class="fas fa-sort"></i></th>
+                                </tr>
+                            </thead>
+                            <tbody id="tokensTableBody"></tbody>
+                        </table>
+                        <div class="panel-footer-link">
+                            <button class="btn-link" data-nav="tab-discovery">Go to Discovery &raquo;</button>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- Posizioni Aperte (mini) -->
+                <section class="quadrant positions-panel compact-ref">
+                    <div class="panel-header">
+                        <h2><i class="fas fa-briefcase"></i> Open Positions</h2>
+                        <div class="panel-controls">
+                            <span class="positions-count">Open: <span id="openPositionsCount">0</span></span>
+                        </div>
+                    </div>
+                    <div class="table-container small">
+                        <table class="positions-table" id="positionsTable">
+                            <thead>
+                                <tr>
+                                    <th>Simbolo</th>
+                                    <th>P&L %</th>
+                                    <th>P&L $</th>
+                                    <th>Azione</th>
+                                </tr>
+                            </thead>
+                            <tbody id="positionsTableBody"></tbody>
+                        </table>
+                        <div class="panel-footer-link">
+                            <button class="btn-link" data-nav="tab-positions">Go to Positions &raquo;</button>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- Trade Executions (mini) -->
+                <section class="quadrant executions-panel compact-ref">
+                    <div class="panel-header">
+                        <h2><i class="fas fa-bolt"></i> Recent Trades</h2>
+                        <div class="panel-controls">
+                            <button id="clearExecutions" class="btn btn-secondary btn-xs" title="Clear list">
+                                <i class="fas fa-trash"></i>
+                            </button>
+                        </div>
+                    </div>
+                    <div class="executions-container mini" id="recentExecutions"></div>
+                    <div class="panel-footer-link">
+                        <button class="btn-link" data-nav="tab-positions">Go to Positions &raquo;</button>
+                    </div>
+                </section>
+            </div>
+        </div>
+
+        <!-- DISCOVERY TAB -->
+        <div id="tab-discovery" class="tab-panel">
+            <section class="panel full">
+                <div class="panel-header">
+                    <h2><i class="fas fa-search"></i> Token Discovery</h2>
+                    <div class="panel-controls">
+                        <input type="text" id="tokenSearch" placeholder="Filter symbol..." class="input-filter" />
+                        <!-- Safety filter removed -->
+                        <span class="token-count">Total: <span id="foundTokenCount">0</span></span>
+                    </div>
+                </div>
+                <div class="table-container">
+                    <table class="sortable-table discovery" id="discoveryTokensTable">
+                        <thead>
+                            <tr>
+                                <th data-sort="symbol">Symbol <i class="fas fa-sort"></i></th>
+                                <th data-sort="name">Name <i class="fas fa-sort"></i></th>
+                                <th data-sort="priceUsd">Price USD <i class="fas fa-sort"></i></th>
+                                    <th>5m</th>
+                                    <th>1h</th>
+                                    <th>6h</th>
+                                <th data-sort="liquidity">Liquidity <i class="fas fa-sort"></i></th>
+                                <th data-sort="volume24h">Volume 24h <i class="fas fa-sort"></i></th>
+                                <th data-sort="marketCap">Mkt Cap <i class="fas fa-sort"></i></th>
+                                <!-- Safety & Opportunity columns removed per richiesta -->
+                                <th>Action</th>
+                                <th data-sort="age">Age <i class="fas fa-sort"></i></th>
+                                <!-- Microstructure moved to right end -->
+                                <th data-sort="takerBuyRatioM5">TBR 5m <i class="fas fa-sort"></i></th>
+                                <th data-sort="txM5">Tx 5m <i class="fas fa-sort"></i></th>
+                                <th data-sort="burstFactor">Burst <i class="fas fa-sort"></i></th>
+                            </tr>
+                        </thead>
+                        <tbody id="discoveryTokensBody"></tbody>
+                    </table>
+                </div>
+            </section>
+        </div>
+    <!-- DISCOVERY 2.0 TAB (ex Radar 2.0) -->
+        <div id="tab-radar2" class="tab-panel">
+            <section class="panel full token-radar-root">
+                <div class="panel-header">
+                    <h2><i class="fas fa-wave-square"></i> Token Discovery 2.0</h2>
+                    <div class="panel-controls">
+                        <button id="radarRefresh" class="btn btn-secondary" style="font-size:0.65rem; padding:4px 8px;">
+                            <i class="fas fa-sync"></i> Refresh
+                        </button>
+                        <button id="radarDensity" class="btn btn-secondary" style="font-size:0.55rem; padding:4px 8px;" title="Compact / Expand rows">
+                            Density
+                        </button>
+                        <div class="radar-controls">
+                            <button id="radarPause" title="Pause updates">PAUSE</button>
+                            <select id="radarWindow" style="background:var(--bg-tertiary);border:1px solid var(--border-color);color:var(--text-secondary);font-size:.55rem;padding:.3rem .4rem;border-radius:6px;">
+                                <option value="30">30</option>
+                                <option value="60" selected>60</option>
+                                <option value="120">120</option>
+                            </select>
+                        </div>
+                        <span class="token-count">Total: <span id="radar2Count">0</span></span>
+                    </div>
+                </div>
+                <div class="radar-feed scrollable" id="radarFeed"></div>
+            </section>
+        </div>
+
+        <!-- TRADE HISTORY TAB -->
+        <div id="tab-history" class="tab-panel">
+            <section class="panel full">
+                <div class="panel-header">
+                    <h2><i class="fas fa-history"></i> Trade History</h2>
+                    <div class="panel-controls history-controls">
+                        <select id="historyTimeframe" title="Timeframe">
+                            <option value="all">All</option>
+                            <option value="24h">24H</option>
+                            <option value="7d">7D</option>
+                            <option value="30d">30D</option>
+                        </select>
+                        <select id="historyOutcomeFilter" title="Outcome">
+                            <option value="all">All</option>
+                            <option value="wins">Wins</option>
+                            <option value="losses">Losses</option>
+                        </select>
+                        <input id="historySearch" type="search" placeholder="Search symbol…" />
+                        <button id="historyExportCsv" class="action-btn sec" title="Export CSV"><i class="fas fa-download"></i> Export</button>
+                        <span class="token-count">Total: <span id="closedTradesCount">0</span></span>
+                    </div>
+                </div>
+
+                <div class="history-summary" id="historySummary">
+                    <div class="summary-card">
+                        <div class="label">Win Rate</div>
+                        <div class="value" id="historyWinRate">--</div>
+                    </div>
+                    <div class="summary-card">
+                        <div class="label">Total P&L</div>
+                        <div class="value" id="historyTotalPnl">--</div>
+                    </div>
+                    <div class="summary-card">
+                        <div class="label">Avg P&L</div>
+                        <div class="value" id="historyAvgPnl">--</div>
+                    </div>
+                    <div class="summary-card">
+                        <div class="label">Trades</div>
+                        <div class="value" id="historyTradesCount">0</div>
+                    </div>
+                </div>
+
+                <div class="table-container">
+                    <table class="positions-table" id="tradeHistoryTable">
+                        <thead>
+                            <tr>
+                                <th data-sort="symbol">Symbol <i class="fas fa-sort"></i></th>
+                                <th data-sort="pnlPercent">P&L % <i class="fas fa-sort"></i></th>
+                                <th data-sort="pnl">P&L $ <i class="fas fa-sort"></i></th>
+                                <th data-sort="entryPrice">Entry <i class="fas fa-sort"></i></th>
+                                <th data-sort="exitPrice">Exit <i class="fas fa-sort"></i></th>
+                                <th data-sort="amount">Amount <i class="fas fa-sort"></i></th>
+                                <th data-sort="duration">Duration <i class="fas fa-sort"></i></th>
+                                <th data-sort="closedAt">Closed At <i class="fas fa-sort"></i></th>
+                            </tr>
+                        </thead>
+                        <tbody id="tradeHistoryBody"></tbody>
+                    </table>
+                </div>
+            </section>
+        </div>
+
+        <!-- POSITIONS TAB -->
+        <div id="tab-positions" class="tab-panel">
+            <section class="panel full">
+                <div class="panel-header">
+                    <h2><i class="fas fa-briefcase"></i> Open Positions</h2>
+                    <div class="panel-controls">
+                        <span class="positions-count">Open: <span id="openPositionsCount">0</span></span>
+                    </div>
+                </div>
+                <div class="table-container">
+                    <div class="positions-cards-wrapper">
+                        <div id="positionCards" class="card-grid"></div>
+                    </div>
+                    <table class="positions-table big" id="positionsTableFull" style="margin-top:24px;">
+                        <thead>
+                            <tr>
+                                <th>Symbol</th>
+                                <th>P&L %</th>
+                                <th>P&L $</th>
+                                <th>Entry Price</th>
+                                <th>Current Price</th>
+                                <th>Tokens</th>
+                                <th>Entry USD</th>
+                                <th>Entry (SOL)</th>
+                                <th>Current Value (USD)</th>
+                                <th>Value (SOL)</th>
+                                <th>Action</th>
+                            </tr>
+                        </thead>
+                        <tbody id="positionsTableBodyFull"></tbody>
+                    </table>
+                </div>
+            </section>
+        </div>
+
+        <!-- LOGS TAB -->
+        <div id="tab-logs" class="tab-panel">
+            <section class="panel full">
+                <div class="panel-header">
+                    <h2><i class="fas fa-list"></i> Activity Log</h2>
+                    <div class="panel-controls">
+                        <select id="logLevelFilter">
+                            <option value="all">All</option>
+                            <option value="info">Info</option>
+                            <option value="warning">Warning</option>
+                            <option value="error">Error</option>
+                            <option value="success">Success</option>
+                        </select>
+                            <button id="clearLogs" class="btn btn-secondary">
+                            <i class="fas fa-trash"></i> Clear
+                        </button>
+                    </div>
+                </div>
+                <div class="log-container large" id="logContainerFull"></div>
+            </section>
+        </div>
+
+        <!-- SETTINGS TAB -->
+        <div id="tab-settings" class="tab-panel">
+            <section class="panel full settings-layout">
+                <div class="panel-header">
+                    <h2><i class="fas fa-cog"></i> Settings</h2>
+                </div>
+                <div class="settings-body">
+                    <aside class="settings-sidebar" aria-label="Settings groups">
+                        <div class="sidebar-inner">
+                            <div class="settings-search">
+                                <input type="text" id="settingsSearch" placeholder="Search setting..." />
+                            </div>
+                            <nav class="settings-groups-nav" id="settingsGroupsNav">
+                                <button type="button" data-target="all" class="active"><i class="fas fa-th-large"></i><span>All</span></button>
+                                <button type="button" data-target="wallet"><i class="fas fa-wallet"></i><span>Wallet & API</span></button>
+                                <button type="button" data-target="trading"><i class="fas fa-chart-line"></i><span>Trading</span></button>
+                                <button type="button" data-target="filters"><i class="fas fa-filter"></i><span>Discovery</span></button>
+                                <button type="button" data-target="execution"><i class="fas fa-tachometer-alt"></i><span>Execution</span></button>
+                                <button type="button" data-target="risk"><i class="fas fa-shield-alt"></i><span>Risk</span></button>
+                                <button type="button" data-target="fees"><i class="fas fa-percent"></i><span>Fees</span></button>
+                                <button type="button" data-target="features"><i class="fas fa-toggle-on"></i><span>Features</span></button>
+                            </nav>
+                            <div class="settings-actions-compact">
+                                <button id="saveSettings" class="btn btn-settings full-width"><i class="fas fa-save"></i> Save</button>
+                                <div id="settingsStatus" class="status-text" aria-live="polite"></div>
+                            </div>
+                        </div>
+                    </aside>
+                    <div class="settings-content" id="settingsContent">
+                        <div class="settings-sections">
+                            <!-- Wallet & API Keys -->
+                            <fieldset class="settings-group" data-group="wallet">
+                                <legend><i class="fas fa-wallet"></i> Wallet & API Keys</legend>
+                                <div class="settings-grid">
+                                    <div class="setting-item full">
+                                        <label>Private Key <small>(masked)</small></label>
+                                        <input type="text" id="PRIVATE_KEY" placeholder="PRIVATE_KEY" />
+                                    </div>
+                                    <div class="setting-item">
+                                        <label>Moralis API Key</label>
+                                        <input type="text" id="MORALIS_API_KEY" placeholder="MORALIS_API_KEY" />
+                                    </div>
+                                    <div class="setting-item">
+                                        <label>Helius API Key</label>
+                                        <input type="text" id="HELIUS_API_KEY" placeholder="HELIUS_API_KEY" />
+                                    </div>
+                                    <div class="setting-item">
+                                        <label>Birdeye API Key</label>
+                                        <input type="text" id="BIRDEYE_API_KEY" placeholder="BIRDEYE_API_KEY (optional)" />
+                                    </div>
+                                </div>
+                            </fieldset>
+                            <!-- Trading Core -->
+                            <fieldset class="settings-group" data-group="trading">
+                                <legend><i class="fas fa-chart-line"></i> Trading</legend>
+                                <div class="settings-grid">
+                                    <div class="setting-item">
+                                        <label>Trade Amount (SOL) <small>min 0.10</small></label>
+                                        <input type="number" id="TRADE_AMOUNT_SOL" step="0.01" min="0.1" class="no-spinner" />
+                                    </div>
+                                    <div class="setting-item">
+                                        <label>Max Positions</label>
+                                        <input type="number" id="MAX_POSITIONS" />
+                                    </div>
+                                </div>
+                            </fieldset>
+                            <!-- Filters / Discovery -->
+                            <fieldset class="settings-group" data-group="filters">
+                                <legend><i class="fas fa-filter"></i> Discovery Filters</legend>
+                                <div class="settings-grid">
+                                    <div class="setting-item">
+                                        <label>Min Safety Score</label>
+                                        <input type="number" id="MIN_SAFETY_SCORE" />
+                                    </div>
+                                    <div class="setting-item">
+                                        <label>Min Volume 24h ($)</label>
+                                        <input type="number" id="MIN_VOLUME_24H" />
+                                    </div>
+                                    <div class="setting-item">
+                                        <label>Min Holders</label>
+                                        <input type="number" id="MIN_HOLDERS" />
+                                    </div>
+                                    <div class="setting-item">
+                                        <label>Min Liquidity ($)</label>
+                                        <input type="number" id="MIN_LIQUIDITY" />
+                                    </div>
+                                    <div class="setting-item">
+                                        <label>Token Age Min (h)</label>
+                                        <input type="number" id="TOKEN_AGE_HOURS_MIN" />
+                                    </div>
+                                    <div class="setting-item">
+                                        <label>Token Age Max (h)</label>
+                                        <input type="number" id="TOKEN_AGE_HOURS_MAX" />
+                                    </div>
+                                </div>
+                            </fieldset>
+                            <!-- Execution / Rate Limiting -->
+                            <fieldset class="settings-group" data-group="execution">
+                                <legend><i class="fas fa-tachometer-alt"></i> Execution & Rate Limiting</legend>
+                                <div class="settings-grid">
+                                    <div class="setting-item">
+                                        <label>Scan Interval (s)</label>
+                                        <input type="number" id="SCAN_INTERVAL_SECONDS" />
+                                    </div>
+                                    <div class="setting-item">
+                                        <label>Max Tokens per Scan</label>
+                                        <input type="number" id="MAX_TOKENS_PER_SCAN" />
+                                    </div>
+                                    <div class="setting-item">
+                                        <label>Monitor Interval (s)</label>
+                                        <input type="number" id="MONITOR_INTERVAL" />
+                                    </div>
+                                    <div class="setting-item">
+                                        <label>Price Cache (s)</label>
+                                        <input type="number" id="PRICE_CACHE_SECONDS" />
+                                    </div>
+                                    <div class="setting-item">
+                                        <label>Smart Caching</label>
+                                        <select id="ENABLE_SMART_CACHING">
+                                            <option value="true">true</option>
+                                            <option value="false">false</option>
+                                        </select>
+                                    </div>
+                                </div>
+                            </fieldset>
+                            <!-- Risk Management -->
+                            <fieldset class="settings-group" data-group="risk">
+                                <legend><i class="fas fa-shield-alt"></i> Risk Management</legend>
+                                <div class="settings-grid">
+                                    <div class="setting-item">
+                                        <label>Stop Loss %</label>
+                                        <input type="number" id="STOP_LOSS_PERCENT" step="0.1" />
+                                    </div>
+                                    <div class="setting-item">
+                                        <label>Take Profit %</label>
+                                        <input type="number" id="TAKE_PROFIT_PERCENT" step="0.1" />
+                                    </div>
+                                    <div class="setting-item">
+                                        <label>Trailing Stop Trigger %</label>
+                                        <input type="number" id="TRAILING_STOP_TRIGGER" step="0.1" />
+                                    </div>
+                                    <div class="setting-item">
+                                        <label>Trailing Stop %</label>
+                                        <input type="number" id="TRAILING_STOP_PERCENT" step="0.1" />
+                                    </div>
+                                    <div class="setting-item">
+                                        <label>Fast Sell Enabled</label>
+                                        <select id="FAST_SELL_ENABLED">
+                                            <option value="true">true</option>
+                                            <option value="false">false</option>
+                                        </select>
+                                    </div>
+                                    <div class="setting-item">
+                                        <label>Panic Sell Threshold %</label>
+                                        <input type="number" id="PANIC_SELL_THRESHOLD" step="0.1" />
+                                    </div>
+                                </div>
+                            </fieldset>
+                            <!-- Fees & Slippage -->
+                            <fieldset class="settings-group" data-group="fees">
+                                <legend><i class="fas fa-percent"></i> Fees & Slippage</legend>
+                                <div class="settings-grid">
+                                    <div class="setting-item">
+                                        <label>Buy Slippage (bps)</label>
+                                        <input type="number" id="BUY_SLIPPAGE_BPS" />
+                                    </div>
+                                    <div class="setting-item">
+                                        <label>Sell Slippage (bps)</label>
+                                        <input type="number" id="SELL_SLIPPAGE_BPS" />
+                                    </div>
+                                </div>
+                            </fieldset>
+                            <!-- Feature Flags -->
+                            <fieldset class="settings-group" data-group="features">
+                                <legend><i class="fas fa-toggle-on"></i> Feature Flags</legend>
+                                <div class="settings-grid">
+                                    <div class="setting-item">
+                                        <label>Enable Auto Trading</label>
+                                        <select id="ENABLE_AUTO_TRADING">
+                                            <option value="true">true</option>
+                                            <option value="false">false</option>
+                                        </select>
+                                    </div>
+                                    <div class="setting-item">
+                                        <label>Enable Real Trades</label>
+                                        <select id="ENABLE_REAL_TRADES">
+                                            <option value="true">true</option>
+                                            <option value="false">false</option>
+                                        </select>
+                                    </div>
+                                    <div class="setting-item">
+                                        <label>Enable Sells</label>
+                                        <select id="ENABLE_SELLS">
+                                            <option value="true">true</option>
+                                            <option value="false">false</option>
+                                        </select>
+                                    </div>
+                                    <div class="setting-item">
+                                        <label>Require Verified Data</label>
+                                        <select id="REQUIRE_VERIFIED_DATA">
+                                            <option value="true">true</option>
+                                            <option value="false">false</option>
+                                        </select>
+                                    </div>
+                                    <div class="setting-item">
+                                        <label>Enable Honeypot Check</label>
+                                        <select id="ENABLE_HONEYPOT_CHECK">
+                                            <option value="true">true</option>
+                                            <option value="false">false</option>
+                                        </select>
+                                    </div>
+                                    <div class="setting-item">
+                                        <label>Allow Manual Unsafe Snipe <small>(bypass discovery filters)</small></label>
+                                        <select id="ALLOW_UNSAFE_MANUAL_SNIPE">
+                                            <option value="true">true</option>
+                                            <option value="false">false</option>
+                                        </select>
+                                    </div>
+                                </div>
+                            </fieldset>
+                            
+                        </div>
+                        <div class="settings-actions wide-actions">
+                                <button id="saveSettings" class="btn btn-settings"><i class="fas fa-save"></i> Save</button>
+                            <span id="settingsStatus" class="status-text" style="font-size:0.75rem;">&nbsp;</span>
+                        </div>
+                    </div>
+                </div>
+            </section>
+        </div>
+    </main>
+
+    <script>
+    (function(){
+        const s = document.createElement('script');
+        s.src = 'renderer.js';
+        s.onload = () => console.log('[loader] renderer.js loaded tag onload (se non vedi [renderer] load marker: possibile runtime error interno)');
+        s.onerror = (e) => console.error('[loader] renderer.js failed to load', e);
+        document.currentScript.parentNode.insertBefore(s, document.currentScript);
+    })();
+    </script>
+</body>
+</html>
