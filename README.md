@@ -46,6 +46,9 @@ Setup Wallet
 
 Import your Solana private key (or create new)
 Add SOL for gas + trading
+create your api keys to start the bot for free:
+Moralis api key: https://admin.moralis.com/register
+Helius key: https://dashboard.helius.dev/signup
 
 
 Configure Filters
@@ -117,6 +120,7 @@ Telegram Channel - Downloads & Support @powersolbotsol
 
 
 Built for Solana traders who want speed, safety, and simplicity.
+
 
 
 
