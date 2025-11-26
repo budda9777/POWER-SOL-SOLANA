@@ -113,11 +113,10 @@ Cryptocurrency trading carries significant risk. Always do your own research.
 
 🔗 Links
 
-Telegram Channel - Downloads & Support
-Documentation - Detailed guides
-Twitter - Updates & News
+Telegram Channel - Downloads & Support @powersolbotsol
 
 
 Built for Solana traders who want speed, safety, and simplicity.
+
 
 
