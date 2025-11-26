@@ -1,0 +1,43 @@
+{
+  "name": "solana-sniper-gui",
+  "version": "1.0.0",
+  "description": "GUI interface for PowerSol Solana Trading Bot",
+  "main": "src/main.js",
+  "scripts": {
+    "start": "electron .",
+    "build": "electron-builder",
+  "build:backend": "pyinstaller --name powersol1 --onefile --clean --noconfirm --console powersol1.py",
+    "dist:win": "npm run build:backend && npm run build",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "electron": "^26.6.10",
+    "electron-builder": "^24.13.3"
+  },
+  "dependencies": {
+    "dotenv": "^16.6.1"
+  },
+  "build": {
+    "appId": "com.powersol.sniper",
+    "productName": "PowerSol Sniper",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "src/**/*",
+      "package.json",
+      ".env.example"
+    ],
+    "extraResources": [
+      { "from": ".", "filter": [ "powersol1.exe" ] },
+      { "from": "dist", "filter": [ "powersol1.exe" ] },
+      { "from": "build/powersol1", "filter": [ "powersol1.exe" ] }
+    ],
+    "win": { "target": "nsis" },
+    "mac": { "target": "dmg" },
+    "linux": { "target": "AppImage" }
+  },
+  "keywords": []
+}
